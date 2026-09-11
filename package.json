@@ -1,0 +1,22 @@
+{
+  "name": "projmanagemant",
+  "version": "1.0.0",
+  "description": "a porject maanagement application for beginners",
+  "keywords": [
+    "udemy",
+    "backend",
+    "API",
+    "creation"
+  ],
+  "license": "ISC",
+  "author": "AMAN SHARMA",
+  "type": "commonjs",
+  "main": "index.js",
+  "types": "module",
+  "scripts": {
+    "dev": "node index.js"
+  },
+  "devDependencies": {
+    "prettier": "3.9.6"
+  }
+}
