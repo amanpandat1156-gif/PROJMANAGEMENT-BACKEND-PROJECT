@@ -7,7 +7,7 @@ import { verifyJWT } from "../middlewares/auth.middleware.js";
 const router = Router();
 
 router.route("/register").post(userRegisterValidator(), validate, registerUser);
-router.route("/login").post(userloginValidator(), validate, login); // yahan 'login' function add kiya
+router.route("/login").post(userloginValidator(), validate, login); 
 router.route("/logout").post(verifyJWT, logoutUser);
 
 export default router;
