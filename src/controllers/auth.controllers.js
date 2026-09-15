@@ -4,6 +4,7 @@ import { ApiError } from "../utils/api-error.js";
 import { ApiResponse } from "../utils/api.response.js";
 import { sendEmail, emailVerificationMailgenContent } from "../utils/mail.js";
 import jwt from "jsonwebtoken";
+import crypto from "crypto"
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
     const user = await User.findById(userId);
@@ -95,7 +96,7 @@ const login = asyncHandler(async (req, res) => {
     throw new ApiError(400, "User does not exists");
   }
 
-  const isPasswordValid = user.isPasswordCorrect(password);
+   const isPasswordValid = await user.isPasswordCorrect(password);
 
   if (!isPasswordValid) {
     throw new ApiError(400, "Invalid credentials");
@@ -168,11 +169,11 @@ const verifyEmail = asyncHandler(async (req, res) => {
   }
 
   let hashToken = crypto
-    .createHarsh("sha256")
-    .update(verification)
+    .createHash("sha256")
+    .update(verificationToken)
     .digest("hex");
 
-  await User.findOne({
+   const user = await User.findOne({
     emailVerificationToken: hashedToken,
     emailVerificationExpiry: { $gt: Date.now() },
   });
@@ -388,4 +389,5 @@ export {
   forgotPasswordRequest,
   resetForgotPassword,
   changeCurrentPassword,
+   refreshAccessToken
 };
