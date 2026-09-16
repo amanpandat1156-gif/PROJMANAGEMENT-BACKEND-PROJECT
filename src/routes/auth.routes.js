@@ -52,3 +52,5 @@
       .post(verifyJWT, resendEmailVerification);
 
     export default router;
+
+    
