@@ -2,9 +2,14 @@ import { User } from "../models/user.models.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import { ApiError } from "../utils/api-error.js";
 import { ApiResponse } from "../utils/api.response.js";
-import { sendEmail, emailVerificationMailgenContent } from "../utils/mail.js";
+import {
+  sendEmail,
+  emailVerificationMailgenContent,
+  forgotPasswordMailgenContent,
+} from "../utils/mail.js";
 import jwt from "jsonwebtoken";
-import crypto from "crypto"
+import crypto from "crypto";
+
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
     const user = await User.findById(userId);
@@ -46,13 +51,16 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(500, "Something went wrong while registering the user");
   }
 
-  const { hashToken, tokenExpiry } = user.generateTemporaryToken();
+  const { unhashedToken, hashToken, tokenExpiry } =
+    user.generateTemporaryToken();
 
   user.emailVerificationToken = hashToken;
   user.emailVerificationExpiry = tokenExpiry;
   await user.save({ validateBeforeSave: false });
 
-  const verificationUrl = `${req.protocol}://${req.get("host")}/api/v1/users/verify-email/${hashToken}`;
+  console.log("🔥 YE WALA TOKEN COPY KARO:", unhashedToken);
+
+  const verificationUrl = `${req.protocol}://${req.get("host")}/api/v1/auth/verify-email/${unhashedToken}`;
   const mailgenContent = emailVerificationMailgenContent(
     user.username,
     verificationUrl,
@@ -84,19 +92,21 @@ const registerUser = asyncHandler(async (req, res) => {
 });
 
 const login = asyncHandler(async (req, res) => {
-  const { email, password, username } = req.body;
+  const { email, username, password } = req.body;
 
-  if (!email) {
+  if (!email && !username) {
     throw new ApiError(400, "Username or email is required");
   }
 
-  const user = await User.findOne({ email });
+  const user = await User.findOne({
+    $or: [{ email }, { username }],
+  });
 
   if (!user) {
     throw new ApiError(400, "User does not exists");
   }
 
-   const isPasswordValid = await user.isPasswordCorrect(password);
+  const isPasswordValid = await user.isPasswordCorrect(password);
 
   if (!isPasswordValid) {
     throw new ApiError(400, "Invalid credentials");
@@ -112,13 +122,13 @@ const login = asyncHandler(async (req, res) => {
 
   const option = {
     httpOnly: true,
-    secure: true,
+    secure: process.env.NODE_ENV === "production",
   };
 
   return res
     .status(200)
     .cookie("accessToken", accessToken, option)
-    .cookie("refreshToken", accessToken, option)
+    .cookie("refreshToken", refreshToken, option)
     .json(
       new ApiResponse(
         200,
@@ -146,7 +156,7 @@ const logoutUser = asyncHandler(async (req, res) => {
   );
   const options = {
     httpOnly: true,
-    secure: true,
+    secure: process.env.NODE_ENV === "production",
   };
   return res
     .status(200)
@@ -168,12 +178,12 @@ const verifyEmail = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Email verification token is missing");
   }
 
-  let hashToken = crypto
+  let hashedToken = crypto
     .createHash("sha256")
     .update(verificationToken)
     .digest("hex");
 
-   const user = await User.findOne({
+  const user = await User.findOne({
     emailVerificationToken: hashedToken,
     emailVerificationExpiry: { $gt: Date.now() },
   });
@@ -208,36 +218,28 @@ const resendEmailVerification = asyncHandler(async (req, res) => {
   if (user.isEmailVerified) {
     throw new ApiError(409, "Email is already verified");
   }
-  const resendEmailVerification = asyncHandler(async (req, res) => {
-    const user = await User.findById(req.user?._id);
 
-    if (!user) {
-      throw new ApiError(404, "User does not exist");
-    }
-    if (user.isEmailVerified) {
-      throw new ApiError(409, "Email is already verified");
-    }
+  const { unhashedToken, hashToken, tokenExpiry } =
+    user.generateTemporaryToken();
 
-    const { unHashedToken, hashedToken, tokenExpiry } =
-      user.generateTemporaryToken();
+  user.emailVerificationToken = hashToken;
+  user.emailVerificationExpiry = tokenExpiry;
+  await user.save({ validateBeforeSave: false });
 
-    user.emailVerificationToken = hashedToken;
-    user.emailVerificationExpiry = tokenExpiry;
+  console.log("🔥 YE WALA TOKEN COPY KARO:", unhashedToken);
 
-    await user.save({ validateBeforeSave: false });
-
-    await sendEmail({
-      email: user?.email,
-      subject: "Please verify your email",
-      mailgenContent: emailVerificationMailgenContent(
-        user.username,
-        `${req.protocol}://${req.get("host")}/api/v1/users/verify-email/${unHashedToken}`,
-      ),
-    });
-    return res
-      .status(200)
-      .json(new ApiResponse(200, {}, "Mail has been sent to your email ID"));
+  await sendEmail({
+    email: user?.email,
+    subject: "Please verify your email",
+    mailgenContent: emailVerificationMailgenContent(
+      user.username,
+      `${req.protocol}://${req.get("host")}/api/v1/auth/verify-email/${unhashedToken}`,
+    ),
   });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "Mail has been sent to your email ID"));
 });
 
 const refreshAccessToken = asyncHandler(async (req, res) => {
@@ -265,7 +267,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
 
     const options = {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
     };
 
     const { accessToken, refreshToken: newRefreshToken } =
@@ -299,24 +301,27 @@ const forgotPasswordRequest = asyncHandler(async (req, res) => {
     throw new ApiError(404, "User does not exists", []);
   }
 
-  if (!user) {
-    throw new ApiError(404, "User does not exists", []);
-  }
-
-  const { unHashedToken, hashedToken, tokenExpiry } =
+  const { unhashedToken, hashToken, tokenExpiry } =
     user.generateTemporaryToken();
 
-  user.forgotPasswordToken = hashedToken;
+  user.forgotPasswordToken = hashToken;
   user.forgotPasswordExpiry = tokenExpiry;
 
   await user.save({ validateBeforeSave: false });
+
+  // 👇 Testing ke liye terminal me token print hoga
+  console.log("🔑 RESET TOKEN COPY KARO:", unhashedToken);
+
+  const resetBaseUrl =
+    process.env.FORGOT_PASSWORD_REDIRECT_URL ||
+    `${req.protocol}://${req.get("host")}/api/v1/auth/reset-password`;
 
   await sendEmail({
     email: user?.email,
     subject: "Password reset request",
     mailgenContent: forgotPasswordMailgenContent(
       user.username,
-      `${process.env.FORGOT_PASSWORD_REDIRECT_URL}/${unHashedToken}`,
+      `${resetBaseUrl}/${unhashedToken}`,
     ),
   });
 
@@ -330,15 +335,25 @@ const forgotPasswordRequest = asyncHandler(async (req, res) => {
       ),
     );
 });
-
 const resetForgotPassword = asyncHandler(async (req, res) => {
   const { resetToken } = req.params;
   const { newPassword } = req.body;
+
+  console.log("1. URL Param (resetToken):", resetToken);
 
   let hashedToken = crypto
     .createHash("sha256")
     .update(resetToken)
     .digest("hex");
+
+  console.log("2. Generated Hash:", hashedToken);
+
+  // Database me check karo bina expiry filter ke
+  const userCheck = await User.findOne({ forgotPasswordToken: hashedToken });
+  console.log(
+    "3. User mila Token se?:",
+    userCheck ? userCheck.email : "NULL (Match nahi hua)",
+  );
 
   const user = await User.findOne({
     forgotPasswordToken: hashedToken,
@@ -346,7 +361,7 @@ const resetForgotPassword = asyncHandler(async (req, res) => {
   });
 
   if (!user) {
-    throw new ApiError(489, "Token is invalid or expired");
+    throw new ApiError(400, "Token is invalid or expired");
   }
 
   user.forgotPasswordExpiry = undefined;
@@ -389,5 +404,5 @@ export {
   forgotPasswordRequest,
   resetForgotPassword,
   changeCurrentPassword,
-   refreshAccessToken
+  refreshAccessToken,
 };

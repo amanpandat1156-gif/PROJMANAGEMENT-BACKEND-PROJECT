@@ -40,6 +40,12 @@ const userSchema = new Schema(
         },
         emailVerificationExpiry: {
             type: Date
+        },
+        forgotPasswordToken: {
+            type: String
+        },
+        forgotPasswordExpiry: {
+            type: Date
         }
     },
     { timestamps: true }
@@ -94,7 +100,13 @@ userSchema.methods.generateTemporaryToken = function () {
         .digest("hex");
     const tokenExpiry = Date.now() + 20 * 60 * 1000; // 20 minutes
 
-    return { unhashedToken, hashToken, tokenExpiry };
+    return {
+        unhashedToken,
+        unHashedToken: unhashedToken,
+        hashToken,
+        hashedToken: hashToken,
+        tokenExpiry
+    };
 };
 
 export const User = mongoose.model("User", userSchema);

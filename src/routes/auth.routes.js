@@ -37,7 +37,7 @@
       .post(userResetForgotPasswordValidator(), validate, resetForgotPassword);
 
     // Secure routes
-    router.route("/logout").get(verifyJWT, logoutUser);
+    router.route("/logout").post(verifyJWT, logoutUser).get(verifyJWT, logoutUser);
     router.route("/current-user").get(verifyJWT, getCurrentUser); // Changed to GET
     router
       .route("/change-password")
